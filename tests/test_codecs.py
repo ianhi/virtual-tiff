@@ -338,6 +338,21 @@ def test_imagecodecs_roundtrip():
     assert codec.codec_config == roundtripped.codec_config
 
 
+@pytest.mark.asyncio
+async def test_lzw_decode_ignores_surplus_past_chunk():
+    """A stream that decodes past the chunk still yields exactly the chunk."""
+    import imagecodecs
+
+    image = np.arange(12, dtype="<u2").reshape(3, 4)
+    stream = imagecodecs.lzw_encode(image.tobytes() + b"\x00\x00\x00")
+    raw = default_buffer_prototype().buffer.from_bytes(stream)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        codec = LZWCodec()
+    result = await codec._decode_single(raw, _make_spec((3, 4), UInt16()))
+    assert result.to_bytes() == image.tobytes()
+
+
 @pytest.mark.parametrize("codec_cls", [LZWCodec, DeflateCodec])
 def test_imagecodecs_to_json_v3(codec_cls):
     codec = codec_cls()

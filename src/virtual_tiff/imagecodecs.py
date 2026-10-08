@@ -14,6 +14,7 @@ from typing import (
 )
 from warnings import warn
 
+import imagecodecs
 import numpy as np
 from zarr.abc.codec import (
     ArrayArrayCodec,
@@ -204,6 +205,24 @@ class LercCodec(_ImageCodecsBytesBytesCodec):
 
 class LZWCodec(_ImageCodecsBytesBytesCodec):
     codec_name = "imagecodecs_lzw"
+
+    async def _decode_single(
+        self, chunk_bytes: Buffer, chunk_spec: ArraySpec
+    ) -> Buffer:
+        # Some writers (e.g. PerkinElmer Harmony) emit LZW streams that decode a
+        # few bytes past the image. TIFF readers, tifffile included, bound the
+        # decode to the strip's size and ignore the surplus; without the bound
+        # the bytes codec downstream fails to reshape the chunk.
+        nbytes = (
+            int(np.prod(chunk_spec.shape))
+            * chunk_spec.dtype.to_native_dtype().itemsize
+        )
+        return await asyncio.to_thread(
+            as_numpy_array_wrapper,
+            lambda buf: imagecodecs.lzw_decode(buf, out=nbytes),
+            chunk_bytes,
+            chunk_spec.prototype,
+        )
 
 
 class PackBitsCodec(_ImageCodecsBytesBytesCodec):
